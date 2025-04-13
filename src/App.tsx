@@ -1,11 +1,15 @@
 import React from 'react';
 import styled from 'styled-components';
 import { Layout, Menu } from 'antd';
-import { BrowserRouter as Router, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
-import { HomeOutlined, MessageOutlined, UserOutlined } from '@ant-design/icons';
+import { BrowserRouter as Router, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { HomeOutlined, MessageOutlined, UserOutlined, IdcardOutlined, ShoppingOutlined } from '@ant-design/icons';
 import Home from './pages/Home';
 import Chat from './pages/Chat';
 import Roles from './pages/Roles';
+import Profile from './pages/Profile';
+import Login from './pages/Login';
+import Products from './pages/Products';
+import { UserProvider } from './contexts/UserContext';
 
 const { Content, Sider } = Layout;
 
@@ -15,6 +19,7 @@ const PageWrapper = styled.div`
   justify-content: center;
   align-items: center;
   padding: 20px;
+  transition: all 0.3s ease-in-out;
 `;
 
 const StyledLayout = styled(Layout)`
@@ -27,6 +32,7 @@ const StyledLayout = styled(Layout)`
   border-radius: 8px;
   overflow: hidden;
   position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 `;
 
 const WindowControls = styled.div`
@@ -36,6 +42,7 @@ const WindowControls = styled.div`
   position: relative;
   left: 0;
   top: 0;
+  z-index: 1;
 `;
 
 const ControlButton = styled.div<{ color: string }>`
@@ -44,10 +51,11 @@ const ControlButton = styled.div<{ color: string }>`
   border-radius: 50%;
   background-color: ${props => props.color};
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   
   &:hover {
     filter: brightness(0.9);
+    transform: scale(1.1);
   }
 `;
 
@@ -56,6 +64,7 @@ const StyledSider = styled(Sider)`
   border-right: 1px solid #f0f0f0;
   display: flex;
   flex-direction: column;
+  transition: all 0.3s ease;
   
   .ant-menu {
     border-right: none;
@@ -70,18 +79,27 @@ const StyledContent = styled(Content)`
   justify-content: flex-start;
   align-items: flex-start;
   overflow-y: auto;
+  transition: all 0.3s ease;
 `;
 
 const ContentWrapper = styled.div`
   width: 100%;
   height: 100%;
   overflow: hidden;
+  transition: all 0.3s ease;
 `;
 
 const FullScreenLayout = styled(StyledLayout)`
   max-width: 100%;
   height: 100vh;
   border-radius: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+`;
+
+const Logo = styled.div`
+  font-size: 18px;
+  font-weight: bold;
+  padding: 12px;
 `;
 
 const NavigationMenu: React.FC = () => {
@@ -104,6 +122,16 @@ const NavigationMenu: React.FC = () => {
       icon: <UserOutlined />,
       label: '角色',
     },
+    {
+      key: '/products',
+      icon: <ShoppingOutlined />,
+      label: '商品橱窗',
+    },
+    {
+      key: '/profile',
+      icon: <IdcardOutlined />,
+      label: '个人主页',
+    },
   ];
 
   return (
@@ -116,9 +144,30 @@ const NavigationMenu: React.FC = () => {
   );
 };
 
+// 路由保护组件
+const ProtectedRoute: React.FC<{ element: React.ReactElement }> = ({ element }) => {
+  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return element;
+};
+
 function AppLayout() {
   const [isOpen, setIsOpen] = React.useState(true);
   const [isFullScreen, setIsFullScreen] = React.useState(false);
+  const location = useLocation();
+
+  // 如果是登录页面，不显示主布局
+  if (location.pathname === '/login') {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+      </Routes>
+    );
+  }
 
   const handleClose = () => {
     setIsOpen(false);
@@ -141,9 +190,13 @@ function AppLayout() {
   const layoutContent = (
     <ContentWrapper>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/roles" element={<Roles />} />
+        <Route path="/" element={<ProtectedRoute element={<Home />} />} />
+        <Route path="/chat" element={<ProtectedRoute element={<Chat />} />} />
+        <Route path="/roles" element={<ProtectedRoute element={<Roles />} />} />
+        <Route path="/products" element={<ProtectedRoute element={<Products />} />} />
+        <Route path="/profile" element={<ProtectedRoute element={<Profile />} />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ContentWrapper>
   );
@@ -183,12 +236,14 @@ function AppLayout() {
   );
 }
 
-function App() {
+const App: React.FC = () => {
   return (
-    <Router>
-      <AppLayout />
-    </Router>
+    <UserProvider>
+      <Router>
+        <AppLayout />
+      </Router>
+    </UserProvider>
   );
-}
+};
 
 export default App;

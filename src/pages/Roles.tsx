@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled, { createGlobalStyle } from 'styled-components';
 import { Input, Button, message, Spin, Empty } from 'antd';
-import { SearchOutlined, PlusOutlined, ArrowRightOutlined, UserOutlined } from '@ant-design/icons';
+import { SearchOutlined, PlusOutlined, ArrowRightOutlined, UserOutlined, HeartOutlined, HeartFilled } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { createNewChat } from './Chat';
 import { fetchRoleList, RoleItemResponse } from '../services/api';
@@ -40,6 +40,7 @@ interface RoleItem {
   description: string;
   promptContent: string;
   type: 'java' | 'psychology' | 'default';
+  likes?: number;
 }
 
 // 样式组件
@@ -83,16 +84,15 @@ const RoleListContainer = styled.div`
   overflow-y: auto;
 `;
 
-const RoleItemContainer = styled.div<{ isSelected?: boolean }>`
+const RoleItemContainer = styled.div`
   display: flex;
   padding: 12px 15px;
   border-bottom: 1px solid #f0f0f0;
   cursor: pointer;
-  background-color: ${props => props.isSelected ? '#f0f0f0' : 'transparent'};
-  align-items: center;
+  position: relative;
   
   &:hover {
-    background-color: ${props => props.isSelected ? '#f0f0f0' : '#f9f9f9'};
+    background-color: #f9f9f9;
   }
 `;
 
@@ -177,24 +177,30 @@ const RoleDetailHeader = styled.div`
 `;
 
 const RoleLargeAvatar = styled.div`
-  width: 100px;
-  height: 100px;
-  border-radius: 8px;
+  width: 120px;
+  height: 120px;
+  border-radius: 12px;
   display: flex;
   justify-content: center;
   align-items: center;
   font-size: 60px;
   margin-right: 24px;
   background-color: #f5f5f5;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   position: relative;
+  border: 1px solid #f0f0f0;
 `;
 
 const RoleLargeAvatarImg = styled.img`
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.3s ease;
+  
+  &:hover {
+    transform: scale(1.05);
+  }
 `;
 
 const RoleLargeAvatarFallback = styled.div`
@@ -205,6 +211,7 @@ const RoleLargeAvatarFallback = styled.div`
   align-items: center;
   font-size: 60px;
   background-color: #f5f5f5;
+  color: #999;
 `;
 
 const RoleInfo = styled.div`
@@ -278,6 +285,37 @@ const StartChatButton = styled(Button)`
   }
 `;
 
+const LikeButton = styled.div<{ isLiked: boolean }>`
+  position: absolute;
+  top: 12px;
+  right: 15px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: ${props => props.isLiked ? '#ff4d4f' : '#999'};
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: ${props => props.isLiked ? 'rgba(255, 77, 79, 0.1)' : 'transparent'};
+  transition: all 0.3s ease;
+
+  .anticon {
+    font-size: 16px;
+    transition: all 0.3s ease;
+  }
+
+  &:hover {
+    background: rgba(255, 77, 79, 0.1);
+    color: #ff4d4f;
+    transform: scale(1.05);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
 // 角色列表主组件
 const Roles: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<RoleItem | null>(null);
@@ -286,7 +324,50 @@ const Roles: React.FC = () => {
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [likedRoles, setLikedRoles] = useState<Set<number>>(new Set());
   const navigate = useNavigate();
+
+  // 处理点赞
+  const handleLike = (e: React.MouseEvent, roleId: number) => {
+    e.stopPropagation(); // 阻止事件冒泡
+    setLikedRoles(prev => {
+      const newLiked = new Set(prev);
+      if (newLiked.has(roleId)) {
+        newLiked.delete(roleId);
+      } else {
+        newLiked.add(roleId);
+      }
+      return newLiked;
+    });
+
+    // 更新角色列表中的点赞数
+    setRoles(prevRoles => 
+      prevRoles.map(role => {
+        if (role.id === roleId) {
+          const currentLikes = role.likes || 0;
+          return {
+            ...role,
+            likes: likedRoles.has(roleId) ? currentLikes - 1 : currentLikes + 1
+          };
+        }
+        return role;
+      })
+    );
+
+    // 同步更新过滤后的角色列表
+    setFilteredRoles(prevRoles => 
+      prevRoles.map(role => {
+        if (role.id === roleId) {
+          const currentLikes = role.likes || 0;
+          return {
+            ...role,
+            likes: likedRoles.has(roleId) ? currentLikes - 1 : currentLikes + 1
+          };
+        }
+        return role;
+      })
+    );
+  };
 
   // 从API获取角色列表
   useEffect(() => {
@@ -309,13 +390,17 @@ const Roles: React.FC = () => {
             // 处理头像
             const avatar = item.mmu.avatar ? item.mmu.avatar : '👤';
 
+            // 添加初始点赞数（随机生成用于演示）
+            const initialLikes = Math.floor(Math.random() * 100);
+
             return {
               id: item.mmu.id,
               name: item.mmu.role_name,
               avatar,
               description: item.mmu.description,
               promptContent: item.prompt.content,
-              type
+              type,
+              likes: initialLikes
             };
           });
 
@@ -434,7 +519,7 @@ const Roles: React.FC = () => {
               <RoleItemContainer 
                 key={role.id} 
                 onClick={() => setSelectedRole(role)}
-                isSelected={selectedRole?.id === role.id}
+                style={{ backgroundColor: selectedRole?.id === role.id ? '#f0f0f0' : 'transparent' }}
               >
                 <RoleAvatar>
                   {role.avatar ? (
@@ -462,6 +547,13 @@ const Roles: React.FC = () => {
                   )}
                 </RoleAvatar>
                 <RoleName>{role.name}</RoleName>
+                <LikeButton 
+                  isLiked={likedRoles.has(role.id)}
+                  onClick={(e) => handleLike(e, role.id)}
+                >
+                  {likedRoles.has(role.id) ? <HeartFilled /> : <HeartOutlined />}
+                  <span>{role.likes || 0}</span>
+                </LikeButton>
               </RoleItemContainer>
             ))
           )}
@@ -623,5 +715,4 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
     </RoleContentPanel>
   );
 };
-
 export default Roles; 

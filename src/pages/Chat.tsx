@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { Input, Button, Select } from 'antd';
+import { Input, Button, Select, Avatar } from 'antd';
 import { 
   SearchOutlined, 
   PlusOutlined, 
@@ -9,9 +9,11 @@ import {
   SettingOutlined,
   FileImageOutlined,
   CodeOutlined,
-  DownOutlined
+  DownOutlined,
+  UserOutlined
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useUser } from '../contexts/UserContext';
 
 // 消息类型定义
 interface Message {
@@ -188,20 +190,6 @@ const MessageRow = styled.div<{ isUser?: boolean }>`
   align-items: flex-start;
   flex-direction: ${props => props.isUser ? 'row-reverse' : 'row'};
   margin-bottom: 8px;
-`;
-
-const Avatar = styled.div<{ isUser?: boolean }>`
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 24px;
-  margin: ${props => props.isUser ? '0 0 0 12px' : '0 12px 0 0'};
-  background-color: ${props => props.isUser ? '#ffeb3b' : '#f0f0f0'};
-  overflow: hidden;
-  position: relative;
 `;
 
 const AvatarImg = styled.img`
@@ -461,48 +449,41 @@ export const createNewChat = (title: string, icon: string, content: string, type
 // 聊天对话组件
 const ChatDialog: React.FC<{ chat: ChatItem }> = ({ chat }) => {
   const [message, setMessage] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string>('gpt-3.5-turbo');
+  const [selectedModel, setSelectedModel] = useState<string>('glm-4-flash');
+  const { avatarUrl } = useUser();
 
   const modelOptions = [
-    { value: 'text-davinci-003', label: 'text-davinci-003' },
-    { value: 'text-davinci-002', label: 'text-davinci-002' },
-    { value: 'davinci', label: 'davinci' },
-    { value: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo' },
-    { value: 'gpt-3.5-turbo-16k', label: 'gpt-3.5-turbo-16k' },
-    { value: 'gpt-4', label: 'gpt-4' },
-    { value: 'gpt-4-32k', label: 'gpt-4-32k' }
+    { value: 'glm-4-flash', label: 'GLM-4-Flash' },
+    { value: 'deepseek-r1', label: 'Deepseek-R1' },
+    { value: 'deepseek-v3', label: 'Deepseek-V3' },
+    { value: 'doubao-pro', label: 'Doubao-Pro' },
+    { value: 'doubao-lite', label: 'Doubao-Lite' },
+    { value: 'qwen-max', label: 'Qwen-Max' },
+    { value: 'QWQ', label: 'QWQ' }
   ];
+
+  // 在消息渲染部分使用用户头像
+  const renderMessage = (msg: Message) => {
+    const isUser = msg.sender === 'user';
+    return (
+      <MessageRow key={msg.id} isUser={isUser}>
+        <Avatar
+          size={40}
+          icon={isUser && !avatarUrl ? <UserOutlined /> : null}
+          src={isUser ? avatarUrl : '/bot-avatar.png'} // 假设机器人头像存储在public目录
+        />
+        <MessageContent isUser={isUser} status={msg.status}>
+          {msg.content}
+        </MessageContent>
+      </MessageRow>
+    );
+  };
 
   return (
     <ChatContentPanel>
       <ChatHeaderTitle>{chat.title}</ChatHeaderTitle>
       <MessagesContainer>
-        {chat.messages && chat.messages.map(msg => (
-          <MessageRow key={msg.id} isUser={msg.sender === 'user'}>
-            <Avatar isUser={msg.sender === 'user'}>
-              {msg.avatar && (msg.avatar.startsWith('http') || msg.avatar.startsWith('/')) ? (
-                <>
-                  <AvatarImg
-                    src={msg.avatar}
-                    alt={msg.sender === 'user' ? '用户' : chat.title}
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                      e.currentTarget.nextElementSibling?.setAttribute('style', 'display: flex');
-                    }}
-                  />
-                  <div style={{ display: 'none', width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                    {msg.sender === 'user' ? '😃' : '🤖'}
-                  </div>
-                </>
-              ) : (
-                msg.avatar || (msg.sender === 'user' ? '😃' : '��')
-              )}
-            </Avatar>
-            <MessageContent isUser={msg.sender === 'user'} status={msg.status}>
-              {msg.content}
-            </MessageContent>
-          </MessageRow>
-        ))}
+        {chat.messages && chat.messages.map(renderMessage)}
       </MessagesContainer>
       <InputContainer>
         <ToolBar>
@@ -541,6 +522,7 @@ const Chat: React.FC = () => {
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const { avatarUrl } = useUser();
   
   // 使用ref来追踪已处理的对话ID
   const processedChatIdsRef = React.useRef<Set<string>>(new Set());
