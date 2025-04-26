@@ -193,4 +193,39 @@ export const fetchProductList = async (): Promise<ProductListResponse> => {
   }
 };
 
-export default api; 
+// 定义下单接口的响应类型
+interface CreateOrderResponse {
+  code: string;
+  info: string;
+  data: string; // data 包含 HTML 表单
+}
+
+// 创建订单函数
+export const createOrder = async (productId: number, token: string): Promise<CreateOrderResponse> => {
+  const url = `http://124.221.174.50:80/api/v1/sale/create_order?productId=${encodeURIComponent(productId)}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': token,
+      // 'Content-Type': 'application/x-www-form-urlencoded' // 通常 POST 请求需要设置 Content-Type，但这里参数在 URL 中，所以可能不需要，或者根据后端实际要求调整
+    },
+    // body: `productId=${encodeURIComponent(productId)}` // 如果参数需要在 body 中，则使用此行
+  });
+
+  if (!response.ok) {
+    // 尝试解析错误响应体
+    let errorInfo = '网络错误或服务器无法响应';
+    try {
+      const errorData = await response.json();
+      errorInfo = errorData.info || errorInfo;
+    } catch (e) {
+      // 解析失败，使用通用错误信息
+    }
+    throw new Error(`HTTP error! status: ${response.status}, info: ${errorInfo}`);
+  }
+
+  return response.json();
+};
+
+export default api;

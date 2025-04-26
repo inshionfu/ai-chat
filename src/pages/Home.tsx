@@ -8,8 +8,9 @@ const { Title, Paragraph } = Typography;
 const HomeContainer = styled.div`
   width: 100%;
   min-height: 100%;
-  background-color: #f5f7fa;
-  padding: 24px;
+  background: linear-gradient(to bottom, #ffffff, #f0f2f5 300px); // 更柔和的背景渐变
+  padding: 40px; // 增加内边距
+  box-sizing: border-box;
 `;
 
 const ContentWrapper = styled.div`
@@ -19,60 +20,78 @@ const ContentWrapper = styled.div`
 
 const WelcomeSection = styled.div`
   text-align: center;
-  margin-bottom: 48px;
-  padding: 48px 20px;
-  background: linear-gradient(135deg, #1890ff08 0%, #1890ff15 100%);
-  border-radius: 16px;
+  margin-bottom: 64px; // 增加下边距
+  padding: 64px 20px; // 增加内边距
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><path fill="%23e6f7ff" d="M50 0 L100 50 L50 100 L0 50 Z" opacity="0.1"/></svg>'), 
+              linear-gradient(135deg, #e6f7ff 0%, #ffffff 100%); // 添加微妙的背景图案和调整渐变
+  border-radius: 20px; // 更大的圆角
+  position: relative;
+  overflow: hidden;
 `;
 
 const MainTitle = styled(Title)`
-  margin-bottom: 16px !important;
-  background: linear-gradient(120deg, #1890ff, #096dd9);
+  margin-bottom: 20px !important;
+  font-size: 3.5em !important; // 增大标题字号
+  font-weight: 700 !important;
+  background: linear-gradient(120deg, #1890ff, #36cfc9); // 调整渐变色
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
+  letter-spacing: -1px;
 `;
 
 const SubTitle = styled(Paragraph)`
   font-size: 18px;
-  color: #666;
-  max-width: 600px;
-  margin: 0 auto !important;
+  color: #555; // 稍深的颜色
+  max-width: 650px;
+  margin: 0 auto 24px auto !important; // 增加下边距
+  line-height: 1.7;
 `;
 
 const FeatureCard = styled(Card)`
   height: 100%;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
-  border: none;
-  
+  border-radius: 16px; // 更大的圆角
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06); // 调整阴影
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); // 更平滑的过渡
+  border: 1px solid #e8e8e8; // 添加细边框
+  background: white;
+  display: flex; // 使用 flex 布局
+  flex-direction: column; // 垂直排列
+
   &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(-8px); // 悬浮效果更明显
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1); // 悬浮阴影
+    border-color: #1890ff;
   }
 
   .ant-card-body {
     padding: 32px 24px;
+    flex-grow: 1; // 让内容区域填充剩余空间
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; // 内容垂直分布
   }
 `;
 
 const IconWrapper = styled.div`
-  font-size: 36px;
+  font-size: 40px; // 增大图标尺寸
   color: #1890ff;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   text-align: center;
   
   .anticon {
-    background: #1890ff10;
-    padding: 16px;
-    border-radius: 12px;
+    background: linear-gradient(135deg, #e6f7ff, #f0faff); // 图标背景渐变
+    padding: 20px;
+    border-radius: 16px; // 更大的圆角
+    display: inline-block;
     transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(24, 144, 255, 0.1);
   }
 
   ${FeatureCard}:hover & .anticon {
-    background: #1890ff20;
-    transform: scale(1.1);
+    background: linear-gradient(135deg, #d6f0ff, #e0f6ff);
+    transform: scale(1.1) rotate(5deg); // 悬浮时旋转效果
+    box-shadow: 0 4px 8px rgba(24, 144, 255, 0.2);
   }
 `;
 
@@ -88,6 +107,10 @@ const FeatureDescription = styled(Paragraph)`
   font-size: 15px;
   margin-bottom: 0 !important;
   line-height: 1.6;
+  min-height: 72px; // 设置最小高度以对齐 (15px * 1.6 * 3 lines approx)
+  display: flex; // 使用 flex 确保内容垂直居中（如果需要）
+  align-items: center;
+  justify-content: center;
 `;
 
 const features = [
@@ -144,4 +167,4 @@ const Home: React.FC = () => {
   );
 };
 
-export default Home; 
+export default Home;

@@ -5,6 +5,7 @@ import { SearchOutlined, PlusOutlined, ArrowRightOutlined, UserOutlined, HeartOu
 import { useNavigate } from 'react-router-dom';
 import { createNewChat } from './Chat';
 import { fetchRoleList, RoleItemResponse } from '../services/api';
+import { useUser } from '../contexts/UserContext'; // 导入 useUser hook
 
 // 全局样式
 const GlobalStyle = createGlobalStyle`
@@ -318,6 +319,7 @@ const LikeButton = styled.div<{ isLiked: boolean }>`
 
 // 角色列表主组件
 const Roles: React.FC = () => {
+  const { avatarUrl } = useUser(); // 获取用户头像URL
   const [selectedRole, setSelectedRole] = useState<RoleItem | null>(null);
   const [searchText, setSearchText] = useState('');
   const [filteredRoles, setFilteredRoles] = useState<RoleItem[]>([]);
@@ -391,7 +393,7 @@ const Roles: React.FC = () => {
             const avatar = item.mmu.avatar ? item.mmu.avatar : '👤';
 
             // 添加初始点赞数（随机生成用于演示）
-            const initialLikes = Math.floor(Math.random() * 100);
+            const initialLikes = 10;
 
             return {
               id: item.mmu.id,
@@ -626,7 +628,7 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
 
   const handleStartChat = () => {
     // 获取当前角色的信息
-    const { name, avatar, description, type, promptContent } = role;
+    const { name, avatar, type, promptContent } = role;
     
     // 根据角色类型确定聊天类型
     let chatType: 'psychological' | 'normal' | 'interview' = 'normal';
@@ -637,10 +639,10 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
     }
     
     // 创建新对话，对于URL类型的头像使用默认表情
-    const chatAvatar = avatar.startsWith('http') || avatar.startsWith('/') ? '🤖' : avatar;
+    const chatAvatar = avatar;
     
     // 创建新对话，使用promptContent作为首条消息
-    const newChat = createNewChat(name, chatAvatar, promptContent || description, chatType);
+    const newChat = createNewChat(name, chatAvatar, promptContent, avatar, chatType); // 传递 avatarUrl
     
     // 显示成功消息
     message.success(`已创建与 ${name} 的新对话`);
@@ -715,4 +717,4 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
     </RoleContentPanel>
   );
 };
-export default Roles; 
+export default Roles;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { Input, Button, Select, Avatar } from 'antd';
 import { 
@@ -14,6 +14,11 @@ import {
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+// 本地存储的键
+const CHATS_STORAGE_KEY = 'ai_chat_chats';
 
 // 消息类型定义
 interface Message {
@@ -36,111 +41,24 @@ interface ChatItem {
   messages?: Message[];
 }
 
-// 静态数据
-const chatList: ChatItem[] = [
+// 静态数据 (现在作为默认值)
+const defaultChatList: ChatItem[] = [
   {
     id: '1',
-    type: 'psychological',
-    title: '心理咨询',
-    message: '吹灭别人的灯，不能照亮自己',
-    time: '01:51 PM',
-    icon: '❤️',
-    messages: []
-  },
-  {
-    id: '2',
     type: 'normal',
     title: '新的对话',
     message: '请问有什么需要帮助的吗？',
     time: '12:45 PM',
-    icon: '🤖',
+    icon: 'https://inshion.oss-cn-shanghai.aliyuncs.com/%E7%94%9F%E6%88%90%E8%B5%9B%E5%8D%9A%E6%9C%8B%E5%85%8B%E5%A4%B4%E5%83%8F.png',
     messages: [
       {
         id: '1',
         content: '请问有什么需要帮助的吗？',
         sender: 'bot',
         timestamp: '12:45 PM',
-        avatar: '🤖'
+        avatar: 'https://inshion.oss-cn-shanghai.aliyuncs.com/%E7%94%9F%E6%88%90%E8%B5%9B%E5%8D%9A%E6%9C%8B%E5%85%8B%E5%A4%B4%E5%83%8F.png'
       },
-      {
-        id: '2',
-        content: '请问有什么需要帮助的吗？',
-        sender: 'user',
-        timestamp: '12:24 PM',
-        avatar: '😃'
-      },
-      {
-        id: '3',
-        content: '写我写个java冒泡排序',
-        sender: 'user',
-        timestamp: '12:24 PM',
-        avatar: '😃'
-      },
-      {
-        id: '4',
-        content: 'ChatGPT 接口尚未对接，暂时还不能回复！！！',
-        sender: 'bot',
-        timestamp: '12:24 PM',
-        avatar: '🤖',
-        status: 'error'
-      }
     ]
-  },
-  {
-    id: '3',
-    type: 'interview',
-    title: '面试官',
-    message: 'Hello, how are you?',
-    time: '01:51 PM',
-    icon: '👨‍💻'
-  },
-  {
-    id: '4',
-    type: 'normal',
-    title: '普通对话',
-    message: '写个java冒泡排序？',
-    time: '01:51 PM',
-    icon: '🐞'
-  },
-  {
-    id: '5',
-    type: 'interview',
-    title: '面试官',
-    message: 'Hello, how are you?',
-    time: '01:51 PM',
-    icon: '👨‍💻'
-  },
-  {
-    id: '6',
-    type: 'normal',
-    title: '普通对话',
-    message: '写个java冒泡排序？',
-    time: '01:51 PM',
-    icon: '🐞'
-  },
-  {
-    id: '7',
-    type: 'interview',
-    title: '面试官',
-    message: 'Hello, how are you?',
-    time: '01:51 PM',
-    icon: '👨‍💻'
-  },
-  {
-    id: '8',
-    type: 'normal',
-    title: '普通对话',
-    message: '写个java冒泡排序？',
-    time: '01:52 PM',
-    icon: '🐞'
-  },
-  {
-    id: '9',
-    type: 'interview',
-    title: '面试官',
-    message: 'Hello, how are you?',
-    time: '01:52 PM',
-    icon: '👨‍💻'
   }
 ];
 
@@ -218,6 +136,34 @@ const MessageContent = styled.div<{ isUser?: boolean, status?: string }>`
   }};
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   position: relative;
+
+  /* Markdown specific styles */
+  p {
+    margin-bottom: 0.5em;
+  }
+  ul, ol {
+    padding-left: 20px;
+    margin-bottom: 0.5em;
+  }
+  li {
+    margin-bottom: 0.2em;
+  }
+  code {
+    background-color: #f0f0f0;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+  }
+  pre {
+    background-color: #f0f0f0;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    code {
+      background-color: transparent;
+      padding: 0;
+    }
+  }
 `;
 
 const InputContainer = styled.div`
@@ -350,6 +296,34 @@ const ChatIcon = styled.div<{ isImage?: boolean }>`
   background-color: ${props => props.isImage ? 'transparent' : '#f0f0f0'};
   overflow: hidden;
   position: relative;
+
+  /* Markdown specific styles */
+  p {
+    margin-bottom: 0.5em;
+  }
+  ul, ol {
+    padding-left: 20px;
+    margin-bottom: 0.5em;
+  }
+  li {
+    margin-bottom: 0.2em;
+  }
+  code {
+    background-color: #f0f0f0;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+  }
+  pre {
+    background-color: #f0f0f0;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    code {
+      background-color: transparent;
+      padding: 0;
+    }
+  }
 `;
 
 const ChatIconImg = styled.img`
@@ -405,7 +379,7 @@ const ChatItemHeader = styled.div`
 `;
 
 // 创建新对话的helper函数
-export const createNewChat = (title: string, icon: string, content: string, type: 'psychological' | 'normal' | 'interview' = 'normal'): ChatItem => {
+export const createNewChat = (title: string, icon: string, content: string, userAvatar: string | undefined, type: 'psychological' | 'normal' | 'interview' = 'normal'): ChatItem => {
   const now = new Date();
   const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   
@@ -432,48 +406,183 @@ export const createNewChat = (title: string, icon: string, content: string, type
         content: content,
         sender: 'user',
         timestamp: timeString,
-        avatar: '😃'
-      },
-      {
-        id: '2',
-        content: 'ChatGPT 接口尚未对接，暂时还不能回复！！！',
-        sender: 'bot',
-        timestamp: timeString,
-        avatar: chatIcon,
-        status: 'error'
+        avatar: userAvatar // 使用传入的用户头像
       }
     ]
   };
 };
 
 // 聊天对话组件
-const ChatDialog: React.FC<{ chat: ChatItem }> = ({ chat }) => {
+const ChatDialog: React.FC<{ chat: ChatItem; onUpdateChat: (updatedChat: ChatItem | ((prevChat: ChatItem) => ChatItem)) => void }> = ({ chat, onUpdateChat }) => {
   const [message, setMessage] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string>('glm-4-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('doubao-pro');
   const { avatarUrl } = useUser();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const modelOptions = [
-    { value: 'glm-4-flash', label: 'GLM-4-Flash' },
+    { value: 'glm-4-flash-250414', label: 'GLM-4' },
     { value: 'deepseek-r1', label: 'Deepseek-R1' },
     { value: 'deepseek-v3', label: 'Deepseek-V3' },
-    { value: 'doubao-pro', label: 'Doubao-Pro' },
-    { value: 'doubao-lite', label: 'Doubao-Lite' },
+    { value: 'doubao-pro-4k', label: 'doubao-pro' },
+    { value: 'doubao-lite-4k', label: 'doubao-lite' },
     { value: 'qwen-max', label: 'Qwen-Max' },
     { value: 'QWQ', label: 'QWQ' }
   ];
 
+  // 滚动到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat.messages]);
+
+  // 发送消息处理函数 (Ensure this is defined within ChatDialog)
+  const handleSendMessage = async () => {
+    if (!message.trim()) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('用户未登录');
+      // 可以添加提示用户登录的逻辑，例如跳转到登录页
+      // navigate('/login'); 
+      return;
+    }
+
+    const userMessage: Message = {
+      id: `msg_${Date.now()}_user`,
+      content: message,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      avatar: avatarUrl || undefined // Use avatarUrl directly
+    };
+
+    const botMessageId = `msg_${Date.now()}_bot`;
+    const botMessagePlaceholder: Message = {
+      id: botMessageId,
+      content: '', // Initial empty content for streaming
+      sender: 'bot',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      avatar: chat.icon, // Use chat icon for bot avatar
+      status: 'loading'
+    };
+
+    // Update UI immediately with user message and loading bot message
+    const updatedMessages = [...(chat.messages || []), userMessage, botMessagePlaceholder];
+    // Use functional update for onUpdateChat
+    onUpdateChat(prevChat => ({ ...prevChat, messages: updatedMessages }));
+    setMessage(''); // Clear input field
+
+    try {
+      const apiUrl = 'http://124.221.174.50:80/api/v1/chat/completions'; // Backend API endpoint
+
+      // Prepare request body according to API spec
+      const requestBody = {
+        model: selectedModel,
+        messages: updatedMessages
+          .filter(msg => msg.id !== botMessageId) // Exclude the placeholder message
+          .map(msg => ({ 
+            role: msg.sender === 'user' ? 'user' : 'assistant', // Map sender to role
+            content: msg.content 
+          }))
+      };
+
+      const response = await fetch(apiUrl, {
+        method: 'POST', // Use POST for sending data in RequestBody
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `${token}` // Correct Authorization header format
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text(); // Try to get error details
+        throw new Error(`HTTP error! status: ${response.status}, details: ${errorData}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let botResponseContent = '';
+      let done = false;
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          botResponseContent += chunk;
+
+          // Update bot message content in real-time using functional update
+          onUpdateChat(prevChat => {
+            const currentMessages = prevChat.messages || [];
+            const botMsgIndex = currentMessages.findIndex(msg => msg.id === botMessageId);
+            if (botMsgIndex !== -1) {
+              const updatedBotMsg = { ...currentMessages[botMsgIndex], content: botResponseContent, status: 'loading' as 'loading' };
+              const newMessages = [...currentMessages];
+              newMessages[botMsgIndex] = updatedBotMsg;
+              return { ...prevChat, messages: newMessages };
+            }
+            return prevChat; // Return previous state if message not found
+          });
+        }
+      }
+
+      // Stream finished, update final status using functional update
+      onUpdateChat(prevChat => {
+        const currentMessages = prevChat.messages || [];
+        const botMsgIndex = currentMessages.findIndex(msg => msg.id === botMessageId);
+        if (botMsgIndex !== -1) {
+          const updatedBotMsg = { ...currentMessages[botMsgIndex], status: 'success' as 'success' };
+          const newMessages = [...currentMessages];
+          newMessages[botMsgIndex] = updatedBotMsg;
+          return { ...prevChat, messages: newMessages };
+        }
+        return prevChat;
+      });
+
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      // Update bot message status to error using functional update
+      onUpdateChat(prevChat => {
+        const currentMessages = prevChat.messages || [];
+        const botMsgIndex = currentMessages.findIndex(msg => msg.id === botMessageId);
+        if (botMsgIndex !== -1) {
+          const errorContent = `请求出错: ${error instanceof Error ? error.message : String(error)}`;
+          const updatedBotMsg = { ...currentMessages[botMsgIndex], content: errorContent, status: 'error' as 'error' };
+          const newMessages = [...currentMessages];
+          newMessages[botMsgIndex] = updatedBotMsg;
+          return { ...prevChat, messages: newMessages };
+        }
+        return prevChat;
+      });
+    }
+  };
+
   // 在消息渲染部分使用用户头像
   const renderMessage = (msg: Message) => {
     const isUser = msg.sender === 'user';
+    const displayAvatar = isUser ? avatarUrl : msg.avatar; // Use user's avatar or bot's avatar
     return (
       <MessageRow key={msg.id} isUser={isUser}>
         <Avatar
           size={40}
-          icon={isUser && !avatarUrl ? <UserOutlined /> : null}
-          src={isUser ? avatarUrl : '/bot-avatar.png'} // 假设机器人头像存储在public目录
+          icon={!displayAvatar && (isUser ? <UserOutlined /> : null)} // Show UserOutlined if user avatar is missing
+          src={displayAvatar}
         />
         <MessageContent isUser={isUser} status={msg.status}>
-          {msg.content}
+          {isUser ? (
+             msg.content // User message: plain text
+          ) : msg.status === 'loading' && !msg.content ? (
+            '思考中...' // Bot message: loading placeholder
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {msg.content}
+            </ReactMarkdown> // Bot message: render markdown
+          )}
+          {/* Optional: Add a subtle indicator for streaming if needed */}
+          {/* {msg.status === 'loading' && msg.content ? '...' : ''} */}
         </MessageContent>
       </MessageRow>
     );
@@ -484,6 +593,7 @@ const ChatDialog: React.FC<{ chat: ChatItem }> = ({ chat }) => {
       <ChatHeaderTitle>{chat.title}</ChatHeaderTitle>
       <MessagesContainer>
         {chat.messages && chat.messages.map(renderMessage)}
+        <div ref={messagesEndRef} /> {/* Element to scroll to */}
       </MessagesContainer>
       <InputContainer>
         <ToolBar>
@@ -502,12 +612,18 @@ const ChatDialog: React.FC<{ chat: ChatItem }> = ({ chat }) => {
           />
         </ToolBar>
         <InputWrapper>
-          <TextArea 
-            placeholder="那你什么时候能回复我呢？"
+          <TextArea
+            placeholder="输入消息... (Ctrl+Enter 发送)"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            onPressEnter={(e) => {
+              if (e.ctrlKey && !e.shiftKey) {
+                e.preventDefault(); // Prevent default newline on Ctrl+Enter
+                handleSendMessage(); // Call the function defined within this component
+              }
+            }}
           />
-          <SendButton type="primary">
+          <SendButton type="primary" onClick={handleSendMessage}> {/* Call the function defined within this component */}
             发送(Ctrl+Enter)
           </SendButton>
         </InputWrapper>
@@ -517,66 +633,113 @@ const ChatDialog: React.FC<{ chat: ChatItem }> = ({ chat }) => {
 };
 
 const Chat: React.FC = () => {
-  // 使用状态管理聊天列表
-  const [chats, setChats] = useState<ChatItem[]>(chatList);
-  const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const { avatarUrl } = useUser();
-  
-  // 使用ref来追踪已处理的对话ID
-  const processedChatIdsRef = React.useRef<Set<string>>(new Set());
+  const { avatarUrl } = useUser(); // 获取用户头像
 
-  // 处理从角色页面传递过来的数据
+  // 从 localStorage 加载聊天列表，如果不存在则使用默认列表
+  const [chats, setChats] = useState<ChatItem[]>(() => {
+    const savedChats = localStorage.getItem(CHATS_STORAGE_KEY);
+    try {
+      return savedChats ? JSON.parse(savedChats) : defaultChatList;
+    } catch (e) {
+      console.error("Failed to parse chats from localStorage", e);
+      return defaultChatList; // 解析失败时返回默认值
+    }
+  });
+
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(chats.length > 0 ? chats[0].id : null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // 将聊天列表保存到 localStorage
   useEffect(() => {
-    // 如果没有选中的对话，默认选择第一个
-    if (!selectedChat && chats.length > 0) {
-      setSelectedChat(chats[0]);
-      return;
+    try {
+      localStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(chats));
+    } catch (e) {
+      console.error("Failed to save chats to localStorage", e);
     }
-    
-    // 检查是否有新对话数据从location state传递过来
-    if (location.state && location.state.newChat) {
-      const newChat = location.state.newChat as ChatItem;
-      
-      // 检查这个对话ID是否已经处理过
-      if (!processedChatIdsRef.current.has(newChat.id)) {
-        // 记录这个ID已经被处理过
-        processedChatIdsRef.current.add(newChat.id);
-        
-        // 检查是否已存在相同ID的对话
-        const existingChatIndex = chats.findIndex(chat => chat.id === newChat.id);
-        
-        if (existingChatIndex === -1) {
-          // 如果不存在，则添加到列表头部
-          setChats(prevChats => [newChat, ...prevChats]);
-          setSelectedChat(newChat);
-        } else {
-          // 如果已存在，只选中它
-          setSelectedChat(chats[existingChatIndex]);
+  }, [chats]);
+
+  // 处理从 Roles 页面传递过来的新对话
+  useEffect(() => {
+    if (location.state?.newChat) {
+      const newChat: ChatItem = location.state.newChat;
+      // 清除 state，防止重复添加
+      // 注意：将状态清理移到添加聊天之前，并确保只在 newChat 存在时执行
+      navigate(location.pathname, { replace: true, state: {} });
+
+      // 检查是否已存在相同 ID 的对话 (使用最新的 chats 状态)
+      setChats(prevChats => {
+        if (!prevChats.some(chat => chat.id === newChat.id)) {
+          // 只有在对话不存在时才添加
+          setSelectedChatId(newChat.id);
+          return [newChat, ...prevChats];
         }
-      }
-      
-      // 清除location state，避免刷新页面时重复创建
-      window.history.replaceState({}, document.title);
+        // 如果对话已存在，则不修改 chats 列表
+        return prevChats;
+      });
     }
-  }, [location.state, chats, selectedChat]);
+  }, [location.state, navigate]); // 移除 chats 依赖，仅依赖 location.state 和 navigate
+
+  // 过滤聊天列表
+  const filteredChats = chats.filter(chat =>
+    chat.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // 获取当前选中的对话
+  const selectedChat = chats.find(chat => chat.id === selectedChatId);
+
+  // 创建新对话处理函数
+  const handleCreateNewChat = () => {
+    const newChat = createNewChat('新的对话', 'https://inshion.oss-cn-shanghai.aliyuncs.com/%E7%94%9F%E6%88%90%E8%B5%9B%E5%8D%9A%E6%9C%8B%E5%85%8B%E5%A4%B4%E5%83%8F.png', '你好！', avatarUrl);
+    setChats(prevChats => [newChat, ...prevChats]);
+    setSelectedChatId(newChat.id);
+  };
+
+  // 更新对话处理函数 (传递给 ChatDialog)
+  const handleUpdateChat = (updatedChatData: ChatItem | ((prevChat: ChatItem) => ChatItem)) => {
+    setChats(prevChats =>
+      prevChats.map(chat => {
+        if (chat.id === selectedChatId) {
+          // 如果是函数，则基于前一个状态计算新状态
+          if (typeof updatedChatData === 'function') {
+            return updatedChatData(chat);
+          }
+          // 否则直接使用新数据
+          return { ...chat, ...updatedChatData };
+        }
+        return chat;
+      })
+    );
+  };
+
+  // 删除对话处理函数
+  const handleDeleteChat = (chatId: string) => {
+    setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
+    // 如果删除的是当前选中的对话，则选中列表中的第一个对话（如果存在）
+    if (selectedChatId === chatId) {
+      setSelectedChatId(chats.length > 1 ? chats.find(c => c.id !== chatId)?.id ?? null : null);
+    }
+  };
 
   return (
     <ChatContainer>
       <ChatListPanel>
         <SearchContainer>
           <SearchInput placeholder="搜索" prefix={<SearchOutlined />} />
-          <AddButton type="primary" icon={<PlusOutlined />} />
+          <AddButton 
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleCreateNewChat} />
         </SearchContainer>
         <ChatListContainer>
           {chats.map(chat => (
-            <ChatItemContainer 
-              key={chat.id} 
-              onClick={() => setSelectedChat(chat)}
-              style={{ backgroundColor: selectedChat?.id === chat.id ? '#f0f0f0' : 'transparent' }}
+            <ChatItemContainer
+              key={chat.id}
+              onClick={() => setSelectedChatId(chat.id)}
+              style={{ backgroundColor: selectedChatId === chat.id ? '#f0f0f0' : 'transparent' }}
             >
-              <ChatIcon>
+              <ChatIcon isImage={chat.icon?.startsWith('http') || chat.icon?.startsWith('/')}>
                 {chat.icon && (chat.icon.startsWith('http') || chat.icon.startsWith('/')) ? (
                   <>
                     <ChatIconImg
@@ -586,25 +749,19 @@ const Chat: React.FC = () => {
                         const img = e.target as HTMLImageElement;
                         img.style.display = 'none';
                         const fallback = img.nextElementSibling as HTMLElement;
-                        if (fallback) {
-                          fallback.style.display = 'flex';
-                        }
+                        if (fallback) fallback.style.display = 'flex';
                       }}
                     />
-                    <ChatIconFallback style={{ display: 'none' }}>
-                      🤖
-                    </ChatIconFallback>
+                    <ChatIconFallback style={{ display: 'none' }}>🤖</ChatIconFallback>
                   </>
                 ) : (
-                  <ChatIconFallback>
-                    {chat.icon || '🤖'}
-                  </ChatIconFallback>
+                  <ChatIconFallback>{chat.icon || '🤖'}</ChatIconFallback>
                 )}
               </ChatIcon>
               <ChatInfo>
                 <ChatItemHeader>
                   <ChatTitle>
-                    {chat.type === 'psychological' && <PsychologicalBadge>99+</PsychologicalBadge>}
+                    {chat.type === 'psychological' && <PsychologicalBadge>心理</PsychologicalBadge>}
                     {chat.title}
                   </ChatTitle>
                   <ChatTime>{chat.time}</ChatTime>
@@ -616,7 +773,7 @@ const Chat: React.FC = () => {
         </ChatListContainer>
       </ChatListPanel>
       {selectedChat ? (
-        <ChatDialog chat={selectedChat} />
+        <ChatDialog chat={selectedChat} onUpdateChat={handleUpdateChat} />
       ) : (
         <ChatContentPanel style={{ justifyContent: 'center', alignItems: 'center' }}>
           <div>请选择一个聊天或创建新的对话</div>
@@ -626,4 +783,4 @@ const Chat: React.FC = () => {
   );
 };
 
-export default Chat; 
+export default Chat;
