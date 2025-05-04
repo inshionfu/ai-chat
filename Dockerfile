@@ -1,32 +1,30 @@
-# 构建阶段
-FROM node:18-alpine as builder
+# Stage 1: Build the React application
+FROM node:20-alpine AS builder
 
-# 设置工作目录
 WORKDIR /app
 
-# 复制 package.json 和 package-lock.json
-COPY package*.json ./
-
-# 安装依赖
+# Copy package files and install dependencies
+COPY package.json package-lock.json* ./
 RUN npm install
 
-# 复制源代码
+# Copy the rest of the application code
 COPY . .
 
-# 构建应用
+# Build the application
+# Assuming the output is in the 'build' directory (default for create-react-app)
 RUN npm run build
 
-# 生产阶段
-FROM nginx:alpine
+# Stage 2: Serve the application with Nginx
+FROM nginx:stable-alpine
 
-# 复制构建产物到 Nginx 目录
+# Copy the build output from the builder stage to Nginx html directory
 COPY --from=builder /app/build /usr/share/nginx/html
 
-# 复制 Nginx 配置文件
+# Copy the custom Nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# 暴露 80 端口
+# Expose port 80 (Nginx default)
 EXPOSE 80
 
-# 启动 Nginx
+# Start Nginx
 CMD ["nginx", "-g", "daemon off;"] 

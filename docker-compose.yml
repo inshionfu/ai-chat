@@ -1,17 +1,9 @@
 version: '3.8'
 
 services:
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ai-chat-frontend
+  web:
+    build: .
     ports:
-      - "80:80"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s 
+      - "3000:80"
+    container_name: ai-chat-web-app
+    restart: unless-stopped 
