@@ -5,7 +5,7 @@ import {
   SearchOutlined, 
   PlusOutlined, 
   SendOutlined,
-  DeleteOutlined,
+  DeleteOutlined, // <-- Add this import
   SettingOutlined,
   FileImageOutlined,
   CodeOutlined,
@@ -39,6 +39,7 @@ interface ChatItem {
   time: string;
   icon?: string;
   messages?: Message[];
+  system_prompt?: string;
 }
 
 // 静态数据 (现在作为默认值)
@@ -278,9 +279,27 @@ const ChatItemContainer = styled.div`
   padding: 12px 15px;
   border-bottom: 1px solid #f0f0f0;
   cursor: pointer;
+  position: relative; // <-- Add relative positioning
   
   &:hover {
     background-color: #f9f9f9;
+    .delete-icon { // <-- Show delete icon on hover
+      opacity: 1;
+    }
+  }
+`;
+
+const DeleteChatIcon = styled(DeleteOutlined)`
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: #aaa;
+  opacity: 0; // <-- Initially hidden
+  transition: opacity 0.2s ease-in-out;
+  z-index: 1; // Ensure it's above other elements if needed
+
+  &:hover {
+    color: #f5222d; // Change color on icon hover
   }
 `;
 
@@ -379,6 +398,43 @@ const ChatItemHeader = styled.div`
 `;
 
 // 创建新对话的helper函数
+export const createNewRoleChat = (title: string, icon: string, content: string, userAvatar: string | undefined, type: 'psychological' | 'normal' | 'interview' = 'normal'): ChatItem => {
+  const now = new Date();
+  const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  // 使用更加唯一的ID生成方式
+  const uniqueId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  // 处理头像
+  let chatIcon = icon;
+  if (icon && !icon.startsWith('http')) {
+    // 如果不是完整的URL，则添加服务器地址前缀
+    // 注意：这里假设相对路径总是相对于服务器根目录，如果不是，需要调整
+    // 同时，确保环境变量或配置中包含正确的服务器地址
+    const serverBaseUrl = process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8080' : 'http://124.221.174.50:80'; // 从环境变量或配置文件获取
+    chatIcon = `${serverBaseUrl}${icon.startsWith('/') ? '' : '/'}${icon}`;
+  }
+  
+  return {
+    id: uniqueId,
+    type,
+    title,
+    message: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+    time: timeString,
+    icon: chatIcon,
+    messages: [
+      {
+        id: '1',
+        content: content,
+        sender: 'user',
+        timestamp: timeString,
+        avatar: userAvatar // 使用传入的用户头像
+      }
+    ]
+  };
+};
+
+// 创建新对话的helper函数
 export const createNewChat = (title: string, icon: string, content: string, userAvatar: string | undefined, type: 'psychological' | 'normal' | 'interview' = 'normal'): ChatItem => {
   const now = new Date();
   const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -415,7 +471,7 @@ export const createNewChat = (title: string, icon: string, content: string, user
 // 聊天对话组件
 const ChatDialog: React.FC<{ chat: ChatItem; onUpdateChat: (updatedChat: ChatItem | ((prevChat: ChatItem) => ChatItem)) => void }> = ({ chat, onUpdateChat }) => {
   const [message, setMessage] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string>('doubao-pro');
+  const [selectedModel, setSelectedModel] = useState<string>('doubao-lite-4k');
   const { avatarUrl } = useUser();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -474,18 +530,25 @@ const ChatDialog: React.FC<{ chat: ChatItem; onUpdateChat: (updatedChat: ChatIte
       const apiUrl = 'http://124.221.174.50:80/api/v1/chat/completions'; // Backend API endpoint
 
       // Prepare request body according to API spec
+      const messagesForApi = updatedMessages
+        .filter(msg => msg.id !== botMessageId) // Exclude the placeholder message
+        .map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'assistant', // Map sender to role
+          content: msg.content
+        }));
+
+      // 如果当前对话有 system_prompt，则添加到消息列表开头
+      if (chat.system_prompt) {
+        messagesForApi.unshift({ role: 'system', content: chat.system_prompt });
+      }
+
       const requestBody = {
         model: selectedModel,
-        messages: updatedMessages
-          .filter(msg => msg.id !== botMessageId) // Exclude the placeholder message
-          .map(msg => ({ 
-            role: msg.sender === 'user' ? 'user' : 'assistant', // Map sender to role
-            content: msg.content 
-          }))
+        messages: messagesForApi
       };
 
       const response = await fetch(apiUrl, {
-        method: 'POST', // Use POST for sending data in RequestBody
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `${token}` // Correct Authorization header format
@@ -636,16 +699,30 @@ const Chat: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { avatarUrl } = useUser(); // 获取用户头像
+  const processingRef = useRef(false); // Ref to track processing
 
   // 从 localStorage 加载聊天列表，如果不存在则使用默认列表
   const [chats, setChats] = useState<ChatItem[]>(() => {
     const savedChats = localStorage.getItem(CHATS_STORAGE_KEY);
+    let initialChats: ChatItem[];
     try {
-      return savedChats ? JSON.parse(savedChats) : defaultChatList;
+      initialChats = savedChats ? JSON.parse(savedChats) : defaultChatList;
     } catch (e) {
       console.error("Failed to parse chats from localStorage", e);
-      return defaultChatList; // 解析失败时返回默认值
+      initialChats = defaultChatList; // 解析失败时使用默认值
     }
+
+    // Process loaded chats to ensure icons are correct
+    return initialChats.map((chat: ChatItem) => {
+        let processedIcon = chat.icon;
+        const serverBaseUrl = 'http://124.221.174.50:80';
+        if (chat.icon && chat.icon.startsWith('/') && !chat.icon.startsWith('http')) {
+            processedIcon = `${serverBaseUrl}${chat.icon}`;
+        } else if (!chat.icon) {
+            processedIcon = '🤖'; // Default fallback if icon is missing
+        }
+        return { ...chat, icon: processedIcon };
+    });
   });
 
   const [selectedChatId, setSelectedChatId] = useState<string | null>(chats.length > 0 ? chats[0].id : null);
@@ -662,24 +739,190 @@ const Chat: React.FC = () => {
 
   // 处理从 Roles 页面传递过来的新对话
   useEffect(() => {
-    if (location.state?.newChat) {
-      const newChat: ChatItem = location.state.newChat;
-      // 清除 state，防止重复添加
-      // 注意：将状态清理移到添加聊天之前，并确保只在 newChat 存在时执行
-      navigate(location.pathname, { replace: true, state: {} });
+    // Check if we have the necessary state data
+    const hasNewChatData = location.state?.newChatBase && location.state?.initialPromptContent;
 
-      // 检查是否已存在相同 ID 的对话 (使用最新的 chats 状态)
-      setChats(prevChats => {
-        if (!prevChats.some(chat => chat.id === newChat.id)) {
-          // 只有在对话不存在时才添加
-          setSelectedChatId(newChat.id);
-          return [newChat, ...prevChats];
-        }
-        // 如果对话已存在，则不修改 chats 列表
-        return prevChats;
-      });
+    if (hasNewChatData && !processingRef.current) {
+      // Mark as processing START
+      processingRef.current = true;
+
+      const { newChatBase, initialPromptContent } = location.state;
+      const { name, avatar, description, avatarUrl: rawAvatarUrl, type } = newChatBase;
+
+      // Process avatarUrl (same logic as before)
+      let processedAvatarUrl = rawAvatarUrl;
+      const serverBaseUrl = 'http://124.221.174.50:80';
+      if (processedAvatarUrl && processedAvatarUrl.startsWith('/') && !processedAvatarUrl.startsWith('http')) {
+        processedAvatarUrl = `${serverBaseUrl}${processedAvatarUrl}`;
+      } else if (!processedAvatarUrl) {
+        processedAvatarUrl = '🤖';
+      }
+
+      // Create new chat item (same logic as before)
+      const now = new Date();
+      const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const uniqueId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const newChat: ChatItem = {
+        id: uniqueId, type, title: name, message: description, time: timeString,
+        icon: processedAvatarUrl, messages: [], system_prompt: initialPromptContent
+      };
+
+      // Add new chat (using functional update is good practice)
+      setChats(prevChats => [newChat, ...prevChats]);
+      setSelectedChatId(newChat.id);
+
+      // Send initial message
+      sendInitialRoleMessage(newChat.id, initialPromptContent, processedAvatarUrl);
+
+      console.log('New chat created from role:', newChat);
+      console.log('Initial prompt to send:', initialPromptContent);
+
+      // Clear the location state AFTER processing
+      // Use a timeout to ensure state updates settle before clearing,
+      // preventing potential race conditions with navigation/rendering.
+      setTimeout(() => {
+        navigate(location.pathname, { replace: true, state: {} });
+      }, 0);
+
+    } else if (!hasNewChatData) {
+      // If the state is cleared or never had data, reset the processing flag
+      // This ensures that if we navigate *again* with new data, it will be processed.
+      processingRef.current = false;
     }
-  }, [location.state, navigate]); // 移除 chats 依赖，仅依赖 location.state 和 navigate
+    // Keep location.state and navigate as dependencies
+    // Include sendInitialRoleMessage if it's defined outside and relies on component scope
+  }, [location.state, navigate]); // Dependency array might need adjustment based on sendInitialRoleMessage definition
+
+  // 发送初始角色设定消息的函数
+  const sendInitialRoleMessage = async (chatId: string, promptContent: string, botAvatar: string | undefined) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('用户未登录');
+      return;
+    }
+
+    const botMessageId = `msg_${Date.now()}_bot_initial`;
+    const botMessagePlaceholder: Message = {
+      id: botMessageId,
+      content: '', // Initial empty content for streaming
+      sender: 'bot',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      avatar: botAvatar, // Use role's avatar
+      status: 'loading'
+    };
+
+    // 更新UI，添加加载中的机器人消息
+    setChats(prevChats =>
+      prevChats.map(chat => {
+        if (chat.id === chatId) {
+          return { ...chat, messages: [botMessagePlaceholder] }; // Start with only the loading bot message
+        }
+        return chat;
+      })
+    );
+
+    try {
+      const apiUrl = 'http://124.221.174.50:80/api/v1/chat/completions';
+      const requestBody = {
+        model: 'doubao-lite-4k', // 使用默认或指定的模型
+        messages: [
+          {
+            role: 'system',
+            content: promptContent
+          }
+        ]
+      };
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `${token}`,
+          'x-tt-env': 'boe_fuyinshen' // 添加请求头
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, details: ${errorData}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let botResponseContent = '';
+      let done = false;
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          botResponseContent += chunk;
+
+          // 实时更新机器人消息内容
+          setChats(prevChats =>
+            prevChats.map(chat => {
+              if (chat.id === chatId) {
+                const currentMessages = chat.messages || [];
+                const botMsgIndex = currentMessages.findIndex(msg => msg.id === botMessageId);
+                if (botMsgIndex !== -1) {
+                  const updatedBotMsg = { ...currentMessages[botMsgIndex], content: botResponseContent, status: 'loading' as 'loading' };
+                  const newMessages = [...currentMessages];
+                  newMessages[botMsgIndex] = updatedBotMsg;
+                  return { ...chat, messages: newMessages };
+                }
+              }
+              return chat;
+            })
+          );
+        }
+      }
+
+      // 流结束，更新最终状态
+      setChats(prevChats =>
+        prevChats.map(chat => {
+          if (chat.id === chatId) {
+            const currentMessages = chat.messages || [];
+            const botMsgIndex = currentMessages.findIndex(msg => msg.id === botMessageId);
+            if (botMsgIndex !== -1) {
+              const updatedBotMsg = { ...currentMessages[botMsgIndex], status: 'success' as 'success' };
+              const newMessages = [...currentMessages];
+              newMessages[botMsgIndex] = updatedBotMsg;
+              // 更新 ChatItem 的 message 预览
+              const previewMessage = botResponseContent.substring(0, 50) + (botResponseContent.length > 50 ? '...' : '');
+              return { ...chat, messages: newMessages, message: previewMessage };
+            }
+          }
+          return chat;
+        })
+      );
+
+    } catch (error) {
+      console.error('Failed to send initial role message:', error);
+      // 更新机器人消息状态为错误
+      setChats(prevChats =>
+        prevChats.map(chat => {
+          if (chat.id === chatId) {
+            const currentMessages = chat.messages || [];
+            const botMsgIndex = currentMessages.findIndex(msg => msg.id === botMessageId);
+            if (botMsgIndex !== -1) {
+              const errorContent = `请求出错: ${error instanceof Error ? error.message : String(error)}`;
+              const updatedBotMsg = { ...currentMessages[botMsgIndex], content: errorContent, status: 'error' as 'error' };
+              const newMessages = [...currentMessages];
+              newMessages[botMsgIndex] = updatedBotMsg;
+              return { ...chat, messages: newMessages, message: '请求出错' }; // 更新预览
+            }
+          }
+          return chat;
+        })
+      );
+    }
+  };
 
   // 过滤聊天列表
   const filteredChats = chats.filter(chat =>
@@ -726,14 +969,19 @@ const Chat: React.FC = () => {
     <ChatContainer>
       <ChatListPanel>
         <SearchContainer>
-          <SearchInput placeholder="搜索" prefix={<SearchOutlined />} />
+          <SearchInput 
+            placeholder="搜索" 
+            prefix={<SearchOutlined />} 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
           <AddButton 
             type="primary"
             icon={<PlusOutlined />}
             onClick={handleCreateNewChat} />
         </SearchContainer>
         <ChatListContainer>
-          {chats.map(chat => (
+          {filteredChats.map(chat => ( // Use filteredChats here
             <ChatItemContainer
               key={chat.id}
               onClick={() => setSelectedChatId(chat.id)}
@@ -761,13 +1009,19 @@ const Chat: React.FC = () => {
               <ChatInfo>
                 <ChatItemHeader>
                   <ChatTitle>
-                    {chat.type === 'psychological' && <PsychologicalBadge>心理</PsychologicalBadge>}
                     {chat.title}
                   </ChatTitle>
                   <ChatTime>{chat.time}</ChatTime>
                 </ChatItemHeader>
-                <ChatMessage>{chat.message}</ChatMessage>
+                <ChatMessage>{chat.message.slice(0,11) + "..."}</ChatMessage>
               </ChatInfo>
+              <DeleteChatIcon 
+                className="delete-icon" 
+                onClick={(e) => { 
+                  e.stopPropagation(); // Prevent triggering ChatItemContainer's onClick
+                  handleDeleteChat(chat.id); 
+                }} 
+              />
             </ChatItemContainer>
           ))}
         </ChatListContainer>

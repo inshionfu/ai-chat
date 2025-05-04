@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled, { createGlobalStyle } from 'styled-components';
-import { Input, Button, message, Spin, Empty } from 'antd';
+import { Input, Button, message, Spin, Empty, Modal } from 'antd';
 import { SearchOutlined, PlusOutlined, ArrowRightOutlined, UserOutlined, HeartOutlined, HeartFilled } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { createNewChat } from './Chat';
-import { fetchRoleList, RoleItemResponse } from '../services/api';
+import { createNewChat, createNewRoleChat } from './Chat';
+import { fetchRoleList, RoleItemResponse, likeRole, reportVisit } from '../services/api'; // 导入 reportVisit
 import { useUser } from '../contexts/UserContext'; // 导入 useUser hook
 
 // 全局样式
@@ -40,8 +40,29 @@ interface RoleItem {
   avatar: string;
   description: string;
   promptContent: string;
+  promptId: number | null; // 新增 prompt_id
+  isLike: boolean; // 新增 isLike 字段
   type: 'java' | 'psychology' | 'default';
   likes?: number;
+}
+
+// 定义 ChatItem 接口（如果 Chat.tsx 中没有导出的话）
+// 这个结构需要与 Chat.tsx 中的保持一致
+interface Message {
+  sender: 'user' | 'ai';
+  text: string;
+  timestamp: number;
+}
+
+interface ChatItem {
+  id: number;
+  name: string;
+  avatar: string;
+  description: string;
+  avatarUrl: string; // 确认是否有这个字段
+  type: 'psychological' | 'normal' | 'interview';
+  messages: Message[];
+  timestamp: number;
 }
 
 // 样式组件
@@ -330,11 +351,27 @@ const Roles: React.FC = () => {
   const navigate = useNavigate();
 
   // 处理点赞
-  const handleLike = (e: React.MouseEvent, roleId: number) => {
+  const handleLike = async (e: React.MouseEvent, roleId: number) => {
     e.stopPropagation(); // 阻止事件冒泡
+
+    const roleToLike = roles.find(role => role.id === roleId);
+    if (!roleToLike || roleToLike.promptId === null) {
+      message.error('无法点赞：缺少 promptId');
+      return;
+    }
+
+    const promptId = roleToLike.promptId;
+    const isCurrentlyLiked = likedRoles.has(roleId);
+
+    // 优化：先更新UI，如果API调用失败再回滚
+    const originalLikedRoles = new Set(likedRoles);
+    const originalRoles = [...roles];
+    const originalFilteredRoles = [...filteredRoles];
+
+    // 更新本地状态
     setLikedRoles(prev => {
       const newLiked = new Set(prev);
-      if (newLiked.has(roleId)) {
+      if (isCurrentlyLiked) {
         newLiked.delete(roleId);
       } else {
         newLiked.add(roleId);
@@ -342,33 +379,41 @@ const Roles: React.FC = () => {
       return newLiked;
     });
 
-    // 更新角色列表中的点赞数
-    setRoles(prevRoles => 
-      prevRoles.map(role => {
+    const updateLikesOptimistic = (rolesList: RoleItem[]) =>
+      rolesList.map(role => {
         if (role.id === roleId) {
           const currentLikes = role.likes || 0;
           return {
             ...role,
-            likes: likedRoles.has(roleId) ? currentLikes - 1 : currentLikes + 1
+            likes: !isCurrentlyLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1)
           };
         }
         return role;
-      })
-    );
+      });
 
-    // 同步更新过滤后的角色列表
-    setFilteredRoles(prevRoles => 
-      prevRoles.map(role => {
-        if (role.id === roleId) {
-          const currentLikes = role.likes || 0;
-          return {
-            ...role,
-            likes: likedRoles.has(roleId) ? currentLikes - 1 : currentLikes + 1
-          };
-        }
-        return role;
-      })
-    );
+    setRoles(updateLikesOptimistic(roles));
+    setFilteredRoles(updateLikesOptimistic(filteredRoles));
+
+    try {
+      const response = await likeRole(promptId);
+      if (response.code !== '0000') {
+        // API 调用失败，回滚状态
+        message.error(`操作失败: ${response.info}`);
+        setLikedRoles(originalLikedRoles);
+        setRoles(originalRoles);
+        setFilteredRoles(originalFilteredRoles);
+      } else {
+        // API 调用成功，无需额外操作，因为UI已更新
+        message.success(isCurrentlyLiked ? '取消点赞成功' : '点赞成功');
+      }
+    } catch (error) {
+      console.error('点赞/取消点赞请求失败:', error);
+      message.error('网络错误，请稍后重试');
+      // API 调用失败，回滚状态
+      setLikedRoles(originalLikedRoles);
+      setRoles(originalRoles);
+      setFilteredRoles(originalFilteredRoles);
+    }
   };
 
   // 从API获取角色列表
@@ -392,17 +437,16 @@ const Roles: React.FC = () => {
             // 处理头像
             const avatar = item.mmu.avatar ? item.mmu.avatar : '👤';
 
-            // 添加初始点赞数（随机生成用于演示）
-            const initialLikes = 10;
-
             return {
               id: item.mmu.id,
               name: item.mmu.role_name,
               avatar,
               description: item.mmu.description,
               promptContent: item.prompt.content,
+              promptId: item.prompt.prompt_id, // 获取 prompt_id
+              isLike: item.prompt.isLike, // 获取 isLike
               type,
-              likes: initialLikes
+              likes: item.prompt.like // 使用服务器返回的点赞数
             };
           });
 
@@ -411,6 +455,14 @@ const Roles: React.FC = () => {
           // 如果有角色，默认选中第一个
           if (formattedRoles.length > 0) {
             setSelectedRole(formattedRoles[0]);
+            // 根据 isLike 初始化 likedRoles 状态
+            const initialLikedRoles = new Set<number>();
+            formattedRoles.forEach(role => {
+              if (role.isLike && role.promptId) {
+                initialLikedRoles.add(role.id); // 使用 role.id 作为 key
+              }
+            });
+            setLikedRoles(initialLikedRoles);
           }
         } else {
           // API返回错误
@@ -580,8 +632,8 @@ const Roles: React.FC = () => {
 const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
   const navigate = useNavigate();
   const [descriptionRef, setDescriptionRef] = useState<HTMLDivElement | null>(null);
-  // 根据描述长度判断是否需要特殊处理
-  const isLongDescription = role.description && role.description.length > 300;
+  const [isLongDescription, setIsLongDescription] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // 添加加载状态
 
   // 根据描述文本长度动态计算描述区域的样式
   const getDescriptionStyle = () => {
@@ -597,63 +649,130 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
 
   // 确保滚动条滚到底部时，文本完全可见
   useEffect(() => {
-    if (descriptionRef && isLongDescription) {
-      // 初始设置一个合适的底部内边距
-      descriptionRef.style.paddingBottom = '24px';
-      
-      const handleScroll = () => {
-        const { scrollTop, scrollHeight, clientHeight } = descriptionRef;
-        // 检测是否接近底部
-        const scrollRatio = scrollTop / (scrollHeight - clientHeight);
-        
-        if (scrollRatio > 0.95) { // 当滚动到95%以上时
-          // 增加底部内边距，确保最后一行文本完全可见
-          descriptionRef.style.paddingBottom = '28px';
-        } else if (scrollRatio > 0.7) { // 滚动到70%以上时
-          descriptionRef.style.paddingBottom = '24px';
-        } else {
-          descriptionRef.style.paddingBottom = '16px';
-        }
-      };
-      
-      // 立即执行一次，确保初始状态正确
-      handleScroll();
-      
-      descriptionRef.addEventListener('scroll', handleScroll);
-      return () => {
-        descriptionRef?.removeEventListener('scroll', handleScroll);
-      };
-    }
-  }, [descriptionRef, isLongDescription, role.description]);
+    if (descriptionRef) {
+      // 检查内容高度是否超过容器高度
+      const isOverflowing = descriptionRef.scrollHeight > descriptionRef.clientHeight;
+      setIsLongDescription(isOverflowing);
 
-  const handleStartChat = () => {
-    // 获取当前角色的信息
-    const { name, avatar, type, promptContent } = role;
-    
-    // 根据角色类型确定聊天类型
-    let chatType: 'psychological' | 'normal' | 'interview' = 'normal';
-    if (type === 'psychology') {
-      chatType = 'psychological';
-    } else if (type === 'java') {
-      chatType = 'interview';
+      // 如果内容过长，添加滚动事件监听
+      if (isOverflowing) {
+        const handleScroll = () => {
+          const { scrollTop, scrollHeight, clientHeight } = descriptionRef;
+          // 避免除以零
+          if (scrollHeight === clientHeight) return;
+
+          const scrollRatio = scrollTop / (scrollHeight - clientHeight);
+          
+          // 动态调整 paddingBottom 以改善滚动体验
+          if (scrollRatio > 0.95) {
+            descriptionRef.style.paddingBottom = '28px';
+          } else if (scrollRatio > 0.7) {
+            descriptionRef.style.paddingBottom = '24px';
+          } else {
+            descriptionRef.style.paddingBottom = '16px';
+          }
+        };
+        
+        // 立即执行一次并添加监听器
+        handleScroll();
+        descriptionRef.addEventListener('scroll', handleScroll);
+        return () => {
+          descriptionRef?.removeEventListener('scroll', handleScroll);
+        };
+      }
     }
-    
-    // 创建新对话，对于URL类型的头像使用默认表情
-    const chatAvatar = avatar;
-    
-    // 创建新对话，使用promptContent作为首条消息
-    const newChat = createNewChat(name, chatAvatar, promptContent, avatar, chatType); // 传递 avatarUrl
-    
-    // 显示成功消息
-    message.success(`已创建与 ${name} 的新对话`);
-    
-    // 导航到聊天页面，并传递新对话数据
-    navigate('/chat', { 
-      state: { 
-        newChat,
-        timestamp: Date.now() // 添加时间戳确保每次传递的state都是新的
+  }, [descriptionRef, role.description]); // 依赖项应为 descriptionRef 和 role.description
+
+  // 将 handleStartChat 修改为 async 函数，以便处理异步上报
+  const handleStartChat = () => {
+    const { id, name, avatar, type, description, promptContent, promptId } = role;
+
+    // 检查 promptContent 是否存在
+    if (!promptContent) {
+      message.error('角色配置错误，缺少必要的 prompt 内容');
+      return;
+    }
+
+    // 检查 promptId 是否存在
+    if (promptId === null || promptId === undefined) {
+      message.error('角色配置错误，缺少 promptId');
+      // 即使缺少 promptId，仍然允许用户开始对话，但不进行上报
+      // return;
+    }
+
+    // --- 访问统计上报逻辑 开始 ---
+    if (promptId !== null && promptId !== undefined) {
+      const visitedPromptsKey = 'visitedPrompts';
+      try {
+        const visitedRaw = localStorage.getItem(visitedPromptsKey);
+        let visitedSet = new Set<number>();
+        if (visitedRaw) {
+          try {
+            const parsedArray = JSON.parse(visitedRaw);
+            if (Array.isArray(parsedArray)) {
+              visitedSet = new Set(parsedArray);
+            } else {
+              console.warn('本地存储的 visitedPrompts 格式错误，已重置。');
+              localStorage.removeItem(visitedPromptsKey); // 清除错误格式的数据
+            }
+          } catch (parseError) {
+            console.error('解析本地存储 visitedPrompts 失败:', parseError);
+            localStorage.removeItem(visitedPromptsKey); // 清除损坏的数据
+          }
+        }
+
+        if (!visitedSet.has(promptId)) {
+          // promptId 不在集合中，需要上报
+          console.log(`上报访问: promptId=${promptId}`);
+          reportVisit(promptId)
+            .then(response => {
+              if (response && response.code === '0000') {
+                console.log('访问统计上报成功');
+                // 上报成功后，将 promptId 加入集合并更新 localStorage
+                visitedSet.add(promptId);
+                localStorage.setItem(visitedPromptsKey, JSON.stringify(Array.from(visitedSet)));
+              } else {
+                // 上报失败或非预期响应，打印日志
+                console.warn('访问统计上报失败或响应异常:', response?.info || '未知错误');
+                // 失败时不清缓存，下次可以重试
+              }
+            })
+            .catch(error => {
+              // 网络错误等，已经在 reportVisit 函数内部处理并打印日志
+              console.error('调用 reportVisit 时发生网络错误:', error);
+              // 失败时不清缓存，下次可以重试
+            });
+          // 注意：这里不 await reportVisit，让上报在后台进行，不阻塞导航
+        } else {
+          console.log(`promptId=${promptId} 已访问过，无需上报`);
+        }
+      } catch (storageError) {
+        console.error('访问本地存储失败:', storageError);
+        // 即使本地存储失败，也允许继续，只是不上报统计
+      }
+    }
+    // --- 访问统计上报逻辑 结束 ---
+
+    // 准备传递给 Chat 页面的数据
+    const newChatBase = {
+      name,
+      avatar,
+      description,
+      avatarUrl: avatar, // 使用 role 的 avatar 作为 avatarUrl
+      // messages: [], // 初始消息由 Chat.tsx 处理
+      // id 和 timestamp 将在 Chat.tsx 中生成
+    };
+
+    console.log('Navigating to /chat with state:', { newChatBase, initialPromptContent: promptContent });
+
+    // 导航到聊天页面，并传递新对话的基础数据和初始 prompt
+    navigate('/chat', {
+      state: {
+        newChatBase: newChatBase,
+        initialPromptContent: promptContent,
+        // timestamp: Date.now() // 可选，如果 Chat.tsx 需要区分状态更新
       },
-      replace: true // 使用replace模式，替换当前历史记录
+      replace: true // 使用 replace 避免用户回退到 Roles 页时再次触发
     });
   };
 
@@ -707,6 +826,7 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
                 type="primary" 
                 onClick={handleStartChat}
                 icon={<ArrowRightOutlined />}
+                loading={isLoading} // 添加 loading 状态
               >
                 开始对话
               </StartChatButton>
@@ -717,4 +837,9 @@ const RoleDetail: React.FC<{ role: RoleItem }> = ({ role }) => {
     </RoleContentPanel>
   );
 };
+
+// 由于 createNewRoleChat 未导出，在 Roles.tsx 中重新实现或调整
+// 假设 createNewRoleChat 的目的是创建一个初始的 ChatItem 结构
+// createInitialChatStructure 函数不再需要，基础结构在 handleStartChat 中直接创建
+
 export default Roles;

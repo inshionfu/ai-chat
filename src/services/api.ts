@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // 根据环境设置API基础URL
-const BASE_URL = 'http://124.221.174.50:8080';
+const BASE_URL = 'http://124.221.174.50:80';
 
 // 创建登录专用的axios实例
 const loginApi = axios.create({
@@ -101,6 +101,9 @@ userApi.interceptors.response.use(
 export interface RolePrompt {
   name: string;
   content: string;
+  like: number; // 添加点赞数字段
+  isLike: boolean; // 新增 isLike 字段，表示用户是否点赞
+  prompt_id: number | null; // 新增 prompt_id 字段
 }
 
 export interface RoleMmu {
@@ -124,9 +127,25 @@ export interface RoleListResponse {
 // 获取角色列表
 export const fetchRoleList = async (): Promise<RoleListResponse> => {
   try {
-    return await api.get('/api/v1/gpt/mng/mmu/list');
+    return await api.get('/api/v1/role/list');
   } catch (error) {
     console.error('获取角色列表失败:', error);
+    throw error;
+  }
+};
+
+// 点赞/取消点赞角色接口
+export const likeRole = async (promptId: number): Promise<ApiResponse<null>> => {
+  try {
+    // 使用 api 实例，它会自动添加 Authorization header
+    return await api.post('/api/v1/role/like', null, {
+      params: {
+        prompt_id: promptId,
+      },
+    });
+  } catch (error) {
+    console.error('点赞/取消点赞失败:', error);
+    // 抛出错误，让调用方处理
     throw error;
   }
 };
@@ -226,6 +245,29 @@ export const createOrder = async (productId: number, token: string): Promise<Cre
   }
 
   return response.json();
+};
+
+// 上报角色访问统计
+export const reportVisit = async (promptId: number): Promise<ApiResponse<null>> => {
+  try {
+    // 使用 api 实例，它会自动添加 Authorization header
+    return await api.post('/api/v1/role/prompt/count', null, {
+      params: {
+        prompt_id: promptId,
+      },
+    });
+  } catch (error) {
+    console.error('上报访问统计失败:', error);
+    // 这里选择不抛出错误，允许主流程继续，例如导航
+    // 如果需要更强的错误处理，可以取消注释下一行
+    // throw error;
+    // 返回一个符合格式的错误响应结构，避免调用处因 undefined 出错
+    return {
+      code: 'NETWORK_ERROR', // 自定义错误码
+      info: '上报访问统计失败，网络错误或服务器异常',
+      data: null
+    };
+  }
 };
 
 export default api;
